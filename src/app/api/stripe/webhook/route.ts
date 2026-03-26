@@ -1,147 +1,133 @@
-import { stripe } from '@/lib/stripe/client'
-import { createClient } from '@/lib/supabase/server'
-import { calculateCharity } from '@/lib/stripe/plans'
 import { NextResponse } from 'next/server'
-import type Stripe from 'stripe'
+import Stripe from 'stripe'
+import { createClient } from '@supabase/supabase-js'
 
-// NOTE: App Router routes receive the raw Request object by default.
-// No body-parser config needed — Stripe raw body is read via req.text() below.
+// Initialize Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16' as any,
+})
 
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!
+// Initialize Supabase Service Role Client (Bypasses RLS for secure webhook operations)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(req: Request) {
-  const body      = await req.text()
-  const signature = req.headers.get('stripe-signature')!
+  const body = await req.text()
+  const signature = req.headers.get('stripe-signature') as string
 
   let event: Stripe.Event
+
   try {
-    event = stripe.webhooks.constructEvent(body, signature, WEBHOOK_SECRET)
+    event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    )
   } catch (err: any) {
-    console.error('[webhook] Invalid signature:', err.message)
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
+    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 })
   }
 
-  const supabase = await createClient()
+  try {
+    switch (event.type) {
+      // ── Checkout completed → activate subscription ──────────────────
+      case 'checkout.session.completed': {
+        const session: any = event.data.object
+        if (session.mode !== 'subscription') break
 
-  switch (event.type) {
+        const userId = session.metadata?.supabase_user_id
+        const stripeSubId = session.subscription
 
-    // ── Checkout completed → activate subscription ──────────────────
-    case 'checkout.session.completed': {
-      const session = event.data.object as Stripe.Checkout.Session
-      if (session.mode !== 'subscription') break
+        if (!userId || !stripeSubId) break
 
-      const userId           = session.metadata?.supabase_user_id
-      const planType         = session.metadata?.plan_type
-      const charityPct       = Number(session.metadata?.charity_percentage ?? 10)
-      const stripeSubId      = session.subscription as string
+        const stripeSub: any = await stripe.subscriptions.retrieve(stripeSubId)
+        const planType = stripeSub.items.data[0].price.lookup_key || 'monthly'
 
-      const stripeSub: any = await stripe.subscriptions.retrieve(stripeSubId)
+        const { data: subRecord } = await supabase
+          .from('subscriptions')
+          .upsert({
+            user_id: userId,
+            status: 'active',
+            plan_type: planType,
+            stripe_customer_id: session.customer,
+            stripe_subscription_id: stripeSubId,
+            stripe_price_id: stripeSub.items.data[0].price.id,
+            current_period_start: new Date(stripeSub.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(stripeSub.current_period_end * 1000).toISOString(),
+            cancel_at_end: stripeSub.cancel_at_period_end
+          } as any, { onConflict: 'user_id' })
+          .select()
+          .single()
 
-      await supabase.from('subscriptions').upsert({
-        user_id:                userId,
-        plan_type:              planType,
-        status:                 'active',
-        stripe_customer_id:     session.customer as string,
-        stripe_subscription_id: stripeSubId,
-        stripe_price_id:        stripeSub.items.data[0].price.id,
-        current_period_start:   new Date(stripeSub.current_period_start * 1000).toISOString(),
-        current_period_end:     new Date(stripeSub.current_period_end   * 1000).toISOString(),
-      }, { onConflict: 'user_id' })
+        // Get profile for charity
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('selected_charity_id, charity_percentage')
+          .eq('id', userId)
+          .single()
 
-      // Get subscription DB record for donations
-      const { data: subRecord } = await supabase
-        .from('subscriptions')
-        .select('id')
-        .eq('user_id', userId)
-        .single()
+        // Auto-create charity donation record
+        if (profile?.selected_charity_id && subRecord) {
+          const importedPlans: any = (await import('@/lib/stripe/plans')).PLANS
+          const plan = importedPlans[planType as string] || importedPlans['monthly']
+          
+          const charityPct = profile.charity_percentage || 10
+          const donationAmt = Math.round((plan.amount * charityPct) / 100)
 
-      // Get charity — userId here is the Supabase auth UUID stored in auth_user_id
-      // Get charity — userId here is the profile.id passed from checkout metadata
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('selected_charity_id')
-        .eq('id', userId)
-        .single()
-
-      // Auto-create charity donation record
-      if (profile?.selected_charity_id && subRecord) {
-        const importedPlans: any = (await import('@/lib/stripe/plans')).PLANS
-        const plan               = importedPlans[planType as string] || importedPlans['monthly']
-        const donationAmt        = calculateCharity(plan.amount, charityPct)
-
-        await supabase.from('donations').insert({
-          user_id:         userId,
-          charity_id:      profile.selected_charity_id,
-          subscription_id: subRecord.id,
-          amount_pence:    donationAmt,
-          type:            'subscription_auto',
-          status: 'completed'
-        }as any)
+          await supabase.from('donations').insert({
+            user_id: userId,
+            charity_id: profile.selected_charity_id,
+            subscription_id: subRecord.id,
+            amount_pence: donationAmt,
+            status: 'completed'
+          } as any)
+        }
+        break
       }
-      break
+
+      // ── Invoice paid → renew subscription ──────────────────────────
+      case 'invoice.payment_succeeded': {
+        const invoice: any = event.data.object
+        if (invoice.billing_reason !== 'subscription_cycle') break
+
+        const stripeSubId = invoice.subscription
+        if (!stripeSubId) break
+
+        const stripeSub: any = await stripe.subscriptions.retrieve(stripeSubId)
+
+        await supabase
+          .from('subscriptions')
+          .update({
+            status: 'active',
+            current_period_start: new Date(stripeSub.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(stripeSub.current_period_end * 1000).toISOString(),
+          } as any)
+          .eq('stripe_subscription_id', stripeSubId)
+        break
+      }
+
+      // ── Subscription updated or deleted ────────────────────────────
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const stripeSub: any = event.data.object
+
+        await supabase
+          .from('subscriptions')
+          .update({
+            status: stripeSub.status,
+            cancel_at_end: stripeSub.cancel_at_period_end,
+            current_period_start: new Date(stripeSub.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(stripeSub.current_period_end * 1000).toISOString(),
+          } as any)
+          .eq('stripe_subscription_id', stripeSub.id)
+        break
+      }
     }
 
-    // ── Renewal ─────────────────────────────────────────────────────
-    case 'invoice.payment_succeeded': {
-      const invoice = event.data.object as Stripe.Invoice
-      if (invoice.billing_reason !== 'subscription_cycle') break
-
-      const stripeSubId = invoice.subscription as string
-      const stripeSub   = await stripe.subscriptions.retrieve(stripeSubId)
-
-      await supabase
-        .from('subscriptions')
-        .update({
-          status:               'active',
-          current_period_start: new Date(stripeSub.current_period_start * 1000).toISOString(),
-          current_period_end:   new Date(stripeSub.current_period_end   * 1000).toISOString(),
-        })
-        .eq('stripe_subscription_id', stripeSubId)
-      break
-    }
-
-    // ── Payment failed ───────────────────────────────────────────────
-    case 'invoice.payment_failed': {
-      const invoice     = event.data.object as Stripe.Invoice
-      const stripeSubId = invoice.subscription as string
-
-      await supabase
-        .from('subscriptions')
-        .update({ status: 'past_due' })
-        .eq('stripe_subscription_id', stripeSubId)
-      break
-    }
-
-    // ── Cancelled / deleted ──────────────────────────────────────────
-    case 'customer.subscription.deleted': {
-      const sub = event.data.object as Stripe.Subscription
-
-      await supabase
-        .from('subscriptions')
-        .update({
-          status:       'cancelled',
-          cancelled_at: new Date().toISOString(),
-        })
-        .eq('stripe_subscription_id', sub.id)
-      break
-    }
-
-    // ── Updated (plan change, etc.) ──────────────────────────────────
-    case 'customer.subscription.updated': {
-      const sub = event.data.object as Stripe.Subscription
-
-      await supabase
-        .from('subscriptions')
-        .update({
-          status:               sub.status as any,
-          current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
-          current_period_end:   new Date(sub.current_period_end   * 1000).toISOString(),
-          stripe_price_id:      sub.items.data[0].price.id,
-        })
-        .eq('stripe_subscription_id', sub.id)
-      break
-    }
+    return NextResponse.json({ received: true })
+  } catch (err: any) {
+    console.error('Webhook error:', err)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
-
-  return NextResponse.json({ received: true })
 }
