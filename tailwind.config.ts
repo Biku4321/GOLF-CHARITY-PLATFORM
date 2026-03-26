@@ -9,13 +9,35 @@ const config: Config = {
         sans:    ['DM Sans', 'sans-serif'],
       },
       colors: {
-        ink:     '#0e0e0e',
-        paper:   '#f7f5f0',
-        emerald: { DEFAULT: '#1a6b4a', light: '#e8f5ee', dark: '#0f3d2a' },
-        gold:    { DEFAULT: '#c9a84c', light: '#fdf6e3' },
+        ink:     '#111827',
+        paper:   '#fdfcf9',
+        emerald: { 
+          DEFAULT: '#10b981', 
+          light: '#d1fae5', 
+          dark: '#059669' 
+        },
+        gold: { 
+          DEFAULT: '#fbbf24', 
+          light: '#fef3c7' 
+        },
       },
+      animation: {
+        'fade-up': 'fadeUp 0.7s ease both',
+        'fade-in': 'fadeIn 0.5s ease both',
+      },
+      keyframes: {
+        fadeUp: {
+          '0%': { opacity: '0', transform: 'translateY(24px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        }
+      }
     },
   },
   plugins: [],
 }
+
 export default config
