@@ -45,9 +45,9 @@ export default async function AdminOverviewPage() {
         {(recentDraws ?? []).length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-400">
             No draws yet.{' '}
-            <import Link from 'next/link' href="/admin/draws/new" className="text-emerald-600 hover:underline">
+            <Link href="/admin/draws/new" className="text-emerald-600 hover:underline">
               Create first draw
-            </import>
+            </Link>
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
