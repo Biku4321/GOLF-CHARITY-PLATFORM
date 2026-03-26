@@ -39,5 +39,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAdmin: () => get().profile?.role === 'admin',
 
   isSubscribed: () =>
-    (get().profile?.subscriptions?.[0]?.status === 'active') ?? false,
+  get().profile?.subscriptions?.[0]?.status === 'active',
 }))
