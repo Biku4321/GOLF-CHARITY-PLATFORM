@@ -25,7 +25,7 @@ export async function GET() {
     }
 
     // Real-time check from Stripe (as per PDF requirement)
-    const stripeSub = await stripe.subscriptions.retrieve(sub.stripe_subscription_id)
+    const stripeSub: any = await stripe.subscriptions.retrieve(sub.stripe_subscription_id)
 
     // Sync if mismatch
     if (stripeSub.status !== sub.status) {
