@@ -65,8 +65,9 @@ export async function POST(req: Request) {
 
       // Auto-create charity donation record
       if (profile?.selected_charity_id && subRecord) {
-        const plan         = (await import('@/lib/stripe/plans')).PLANS[planType as any]
-        const donationAmt  = calculateCharity(plan.amount, charityPct)
+        const importedPlans: any = (await import('@/lib/stripe/plans')).PLANS
+        const plan               = importedPlans[planType as string] || importedPlans['monthly']
+        const donationAmt        = calculateCharity(plan.amount, charityPct)
 
         await supabase.from('donations').insert({
           user_id:         userId,
@@ -74,8 +75,8 @@ export async function POST(req: Request) {
           subscription_id: subRecord.id,
           amount_pence:    donationAmt,
           type:            'subscription_auto',
-          status:          'completed',
-        })
+          status: 'completed'
+        }as any)
       }
       break
     }
