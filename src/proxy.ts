@@ -7,7 +7,7 @@ const PUBLIC_ROUTES = ['/', '/charities', '/how-it-works', '/subscribe',
 const ADMIN_ROUTES  = ['/admin']
 const AUTH_ROUTES   = ['/login', '/signup']
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   let supabaseResponse = NextResponse.next({ request: req })
 
   const supabase = createServerClient(
