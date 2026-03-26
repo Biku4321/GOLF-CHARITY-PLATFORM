@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
     // ── Checkout completed → activate subscription ──────────────────
     case 'checkout.session.completed': {
-      const session = event.data.object as Stripe.CheckoutSession
+      const session = event.data.object as Stripe.Checkout.Session
       if (session.mode !== 'subscription') break
 
       const userId           = session.metadata?.supabase_user_id
