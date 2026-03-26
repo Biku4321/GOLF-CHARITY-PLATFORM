@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       const charityPct       = Number(session.metadata?.charity_percentage ?? 10)
       const stripeSubId      = session.subscription as string
 
-      const stripeSub = await stripe.subscriptions.retrieve(stripeSubId)
+      const stripeSub: any = await stripe.subscriptions.retrieve(stripeSubId)
 
       await supabase.from('subscriptions').upsert({
         user_id:                userId,
