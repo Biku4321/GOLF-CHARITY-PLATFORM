@@ -1,26 +1,89 @@
 @import "tailwindcss";
 
+/* ── CSS custom properties ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink:           #0e0e0e;
+  --ink-soft:      #3d3d3a;
+  --ink-muted:     #888780;
+  --paper:         #f7f5f0;
+  --paper-alt:     #efede8;
+  --emerald:       #1a6b4a;
+  --emerald-light: #e8f5ee;
+  --gold:          #c9a84c;
+  --gold-light:    #fdf6e3;
+  --white:         #ffffff;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ── Tailwind v4 theme tokens — must match tailwind.config.ts ── */
+@theme {
+  --color-emerald-50:  #e8f5ee;
+  --color-emerald-100: #c3e6d1;
+  --color-emerald-200: #9dd6b4;
+  --color-emerald-300: #6fc393;
+  --color-emerald-400: #45b074;
+  --color-emerald-500: #2a9659;
+  --color-emerald-600: #1a6b4a;
+  --color-emerald-700: #0f4a33;
+  --color-emerald-800: #07301f;
+  --color-emerald-900: #02190f;
+
+  /* Custom gold colours exposed as Tailwind utilities */
+  --color-gold:       #c9a84c;
+  --color-gold-light: #fdf6e3;
+
+  /* Font families wired to CSS variables set by next/font */
+  --font-display: var(--font-display, 'Playfair Display', serif);
+  --font-sans:    var(--font-sans, 'DM Sans', sans-serif);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ── Base reset ── */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), 'DM Sans', sans-serif;
+  background:  var(--paper);
+  color:       var(--ink);
+  -webkit-font-smoothing: antialiased;
+  margin:  0;
+  padding: 0;
 }
+
+/* Utility for Playfair Display font */
+.font-display { font-family: var(--font-display), 'Playfair Display', serif; }
+
+/* ── Animations ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideRight {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+.animate-fade-up { animation: fadeUp 0.7s ease both; }
+.animate-fade-in { animation: fadeIn 0.5s ease both; }
+
+/* Delay utilities — used alongside animate-fade-up / animate-fade-in */
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
+.delay-600 { animation-delay: 0.6s; }
+
+/* ── Focus ring reset (accessibility) ── */
+:focus-visible {
+  outline: 2px solid var(--emerald);
+  outline-offset: 2px;
+}
+
+/* ── Remove number input spinners (cleaner UX) ── */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; }
+input[type='number'] { -moz-appearance: textfield; }
